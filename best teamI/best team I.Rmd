@@ -43,7 +43,7 @@ head(serie_a)
 ```{r}
 outcome <- serie_a %>%
   mutate(Outcome = ifelse(FTHG > FTAG, "H",ifelse(FTHG < FTAG, "A", "P")))
-head(outcome)
+outcome
 ```
 ##3 Questions:
 
