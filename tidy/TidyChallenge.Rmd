@@ -1,0 +1,72 @@
+---
+title: "Tidy Challenge"
+output: html_document
+date: "2026-10-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyr)
+library(dplyr)
+```
+
+### Step 1
+```{r}
+who1 <- who %>% 
+  pivot_longer(cols = new_sp_m014:newrel_f65, names_to = "key", values_to = "cases", values_drop_na = TRUE)
+who1
+```
+
+### Step 2
+```{r}
+who2 <- who1 %>% 
+  mutate(key = stringr::str_replace(key, "newrel", "new_rel"))
+who2
+```
+
+### Step 3
+```{r}
+##Separate the values of key
+who3 <- who2 %>% 
+  separate(key, into = c("new", "type", "sexage"), sep = "_")
+who3
+
+##Separate the gender/age 
+who4 <- who3 %>% 
+  separate(sexage, into = c("sex", "age"), sep = 1)
+who4
+
+##Separate low and hight age
+who5 <- who4 %>% 
+  mutate(age = stringr::str_replace(age, "014", "0014")) %>%
+  mutate(age = stringr::str_replace(age, "65", "65100")) %>%
+  separate(age, into = c("age_low", "age_high"), sep = 2)
+```
+
+### Step 3
+```{r}
+who5 %>% count(new)
+
+# drop redundant columns
+who6 <- who5 %>% 
+  select(-new, -iso2, -iso3)
+who6
+```
+
+
+### Step pipe
+```{r}
+who0 <- who %>% 
+  pivot_longer(cols = new_sp_m014:newrel_f65, names_to = "key", values_to = "cases", values_drop_na = TRUE) %>%
+  mutate(key = stringr::str_replace(key, "newrel", "new_rel")) %>%
+  separate(key, into = c("new", "type", "sexage"), sep = "_") %>%
+  separate(sexage, into = c("sex", "age"), sep = 1) %>%
+  mutate(age = stringr::str_replace(age, "014", "0014"), age = stringr::str_replace(age, "65", "65100")) %>%
+  separate(age, into = c("age_low", "age_high"), sep = 2) %>%
+  select(-new, -iso2, -iso3)
+who0
+```
+
