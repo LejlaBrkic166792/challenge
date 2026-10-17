@@ -1,0 +1,52 @@
+---
+title: "best team I"
+output: html_document
+date: "2026-10-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyr)
+library(dplyr )
+```
+
+##Step 1
+```{r}
+
+# 1. Creiamo un vettore con tutte le stagioni dal 93/94 a oggi (es. "9394", "9495"...)
+years <- 1993:2025
+seasons <- paste0(substr(years, 3, 4), substr(years + 1, 3, 4))
+
+# 2. Creiamo gli URL esatti dei file CSV sul sito
+urls <- paste0("https://www.football-data.co.uk/mmz4281/", seasons, "/I1.csv")
+
+# 3. Scarichiamo e uniamo i file
+# Usiamo possibly() per evitare che il codice si blocchi se una stagione futura non c'è ancora
+read_safe <- possibly(read_csv, otherwise = tibble())
+
+serie_a <- map_dfr(urls, ~ {
+  read_safe(.x, show_col_types = FALSE) %>%
+    # Selezioniamo solo le colonne richieste
+    select(any_of(c("Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG"))) 
+}) %>%
+  # Filtriamo le righe dove la data non è NA
+  filter(!is.na(Date))
+
+# Guardiamo le prime righe del dataset importato
+head(serie_a)
+```
+
+##Step 2
+```{r}
+outcome <- serie_a %>%
+  mutate(Outcome = ifelse(FTHG > FTAG, "H",ifelse(FTHG < FTAG, "A", "P")))
+head(outcome)
+```
+##3 Questions:
+
+##Vincono piu spesso le squadre in casa o in trasferta?
+##Qualè la squadra che ha vinto piu partite?
+##La Lazio vince piu spesso in casa o in trasferta?
