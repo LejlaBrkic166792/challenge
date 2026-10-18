@@ -10,7 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(tidyr)
-library(dplyr )
+library(dplyr)
+library(purrr)
+library(readr)
 ```
 
 ##Step 1
