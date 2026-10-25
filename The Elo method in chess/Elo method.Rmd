@@ -1,0 +1,132 @@
+---
+title: "The Elo method in chess"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=FALSE,warning = FALSE, message = FALSE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+df <- read.csv("https://users.dimi.uniud.it/~massimo.franceschet/ns/plugandplay/challenges/chess/data.csv")
+```
+
+## Challenges
+
+#1.Has the White an advantage over the Black, that is, is there a first-mover advantage?
+
+```{r}
+table(df$Score) / nrow(df)
+
+ggplot(df, aes(x = factor(Score))) +
+  geom_bar() +
+  scale_x_discrete(labels = c("Vince il Nero", "Patta", "Vince il Bianco")) +
+  labs(x = NULL, y = "Numero di partite")
+
+```
+
+Il Bianco vince più spesso del Nero, quindi esiste un vantaggio del primo mover.
+
+#2.  Write a function that computes the player point rating (1 point for wins, 0.5 points for draws, 0 points for defeats). How are point ratings distributed? Why?
+```{r}
+point_rating <- function(d) {
+  bind_rows(data.frame(id = d$White, points = d$Score),
+            data.frame(id = d$Black, points = 1 - d$Score)) |>
+    group_by(id) |>
+    summarise(points = sum(points), games = n())
+}
+
+players <- point_rating(df)
+summary(players$points)
+
+ggplot(players, aes(x = points)) +
+  geom_histogram(bins = 50) +
+  labs(x = "Punti totali", y = "Numero di giocatori")
+```
+
+I punti hanno una distribuzione asimmetrica a destra, la maggior parte dei giocatori ha pochi punti, mentre pochi giocatori ne hanno moltissimi. Succede perché i punti dipendono dal numero di partite giocate, e poche persone giocano tante partite.
+
+#3.  An interesting property of Elo's ratings is that the sum of all player ratings is always 0. Formally show this property. (Hint: use the fact that $s_{i,j} + s_{j,i}=1$ and $\mu_{i,j} + \mu_{j,i} =1$)
+
+```{r}
+zeta <- 400
+kappa <- 25
+mu <- function(ri, rj) 1 / (1 + 10^(-(ri - rj) / zeta))
+
+g <- expand.grid(s_ij = c(0, 0.5, 1), ri = seq(-1000, 1000, 10), rj = seq(-1000, 1000, 10))
+g$s_ji <- 1 - g$s_ij                      
+
+delta_S <- kappa * (g$s_ij - mu(g$ri, g$rj)) + kappa * (g$s_ji - mu(g$rj, g$ri))
+max(abs(delta_S)) 
+```
+
+#4.  Write a function that computes the player Elo rating (set $\zeta = 400$ and $\kappa = 25$) (Hint: take advantage of the 0-sum property to optimize the code). Obserse its distribution: why is different from the point distribution?  Verify the 0-sum property for Elo's ratings
+```{r}
+elo_rating <- function(d, zeta = 400, kappa = 25) {
+  id <- unique(c(d$White, d$Black))
+  w <- match(d$White, id)
+  b <- match(d$Black, id)
+  r <- numeric(length(id))
+  for (k in seq_len(nrow(d))) {
+    delta <- kappa * (d$Score[k] - 1 / (1 + 10^((r[b[k]] - r[w[k]]) / zeta)))
+    r[w[k]] <- r[w[k]] + delta   # il Bianco guadagna delta
+    r[b[k]] <- r[b[k]] - delta   # il Nero perde delta (0-sum)
+  }
+  data.frame(id, elo = r)
+}
+
+# tabella con punti, partite ed Elo (ricostruita da zero, si può rieseguire)
+players <- point_rating(df) |> left_join(elo_rating(df), by = "id")
+
+summary(players[c("points", "elo")])   # confronto tra le due distribuzioni
+
+ggplot(players, aes(x = elo)) +
+  geom_histogram(bins = 50) +
+  labs(x = "Elo rating", y = "Numero di giocatori")
+
+sum(players$elo)                       # verifica 0-sum
+all.equal(sum(players$elo), 0)
+```
+
+I punti dipendono dal numero di partite giocate, mentre l'Elo misura quanto si va meglio o peggio del previsto: si guadagna battendo avversari forti e si perde con quelli deboli
+
+#5.  Are point and Elo ratings correlated? Are top Elo players overlapping with top point players?
+```{r}
+cor(players$elo, players$points, method = "spearman")   # correlazione
+
+ggplot(players, aes(x = points, y = elo)) +
+  geom_point(alpha = 0.3) +
+  labs(x = "Punti", y = "Elo rating")
+
+# quanti giocatori sono sia nei top 100 per Elo sia nei top 100 per punti
+top_elo    <- players$id[order(-players$elo)][1:100]
+top_points <- players$id[order(-players$points)][1:100]
+length(intersect(top_elo, top_points))
+```
+
+Sì, punti ed Elo sono correlati, ovvero chi vince di più ha di solito anche un Elo più alto, e nel grafico i punti salgono insieme
+
+I migliori per Elo e i migliori per punti si sovrappongono solo in parte, dei 100 migliori per Elo, solo X sono anche tra i 100 migliori per punti. Molti giocatori con tanti punti sono semplicemente quelli che hanno giocato di più, non i più forti
+
+#6. Test if the number of played games has an effect on the Elo and point player ratings
+```{r}
+cor.test(players$games, players$points, method = "spearman")
+cor.test(players$games, players$elo,    method = "spearman")
+
+ggplot(players, aes(x = games, y = points)) +
+  geom_point(alpha = 0.3) +
+  scale_x_log10() +
+  labs(x = "Partite giocate (log)", y = "Punti")
+
+ggplot(players, aes(x = games, y = elo)) +
+  geom_point(alpha = 0.3) +
+  scale_x_log10() +
+  labs(x = "Partite giocate (log)", y = "Elo rating")
+```
+
+Il numero di partite ha un effetto forte sui punti, ovvero chi gioca di più accumula più punti, perché ogni partita ne aggiunge in media circa 0.5. Sull'Elo l'effetto è più debole, perché il rating dipende da come si gioca e non da quanto
