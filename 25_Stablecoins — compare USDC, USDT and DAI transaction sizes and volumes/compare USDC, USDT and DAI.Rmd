@@ -1,0 +1,129 @@
+---
+title: "Stablecoins â€” compare USDC, USDT and DAI transaction sizes and volumes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE)
+```
+
+We want to compare three major Ethereum stablecoins:
+
+-  USDC (smart contract address: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)
+-  USDT (smart contract address: 0xdac17f958d2ee523a2206206994597c13d831ec7)
+-  DAI (smart contract address: 0x6b175474e89094c44da98b954eedeac495271d0f)
+
+
+Our workflow is:
+
+```text
+Ethereum
+   â†“
+Etherscan
+   â†“
+ERC-20 transfer events
+   â†“
+R / tidyverse
+   â†“
+transfer sizes + transfer volumes
+```
+
+We use Etherscan to retrieve the already indexed ERC-20 transfer events. Etherscanâ€™s `tokentx` endpoint can be filtered directly by token contract, so we do not need to download unrelated ERC-20 transfers first. 
+
+We use the term transfer rather than transaction throughout the lab: one Ethereum transaction can generate several ERC-20 transfer events.
+
+```{r}
+library(tidyverse)
+library(httr2)
+
+api_key <- Sys.getenv("ETHERSCAN_API_KEY")
+
+stablecoins <- tibble(
+  token = c("USDC", "USDT", "DAI"),
+  contract = c(
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    "0x6b175474e89094c44da98b954eedeac495271d0f"
+  ),
+  decimals = c(6, 6, 18)
+)
+
+etherscan <- function(...) {
+  request("https://api.etherscan.io/v2/api") |>
+    req_url_query(chainid = 1, apikey = api_key, ...) |>
+    req_perform() |>
+    resp_body_json(simplifyVector = TRUE)
+}
+
+end_block <- strtoi(substr(etherscan(module = "proxy", action = "eth_blockNumber")$result, 3, 20), base = 16L)
+start_block <- end_block - 50
+
+get_transfers <- function(contract, token) {
+  page <- 1
+  pages <- list()
+  repeat {
+    result <- etherscan(
+      module = "account", action = "tokentx", contractaddress = contract,
+      startblock = start_block, endblock = end_block,
+      page = page, offset = 1000, sort = "asc"
+    )$result
+    if (is.character(result)) break
+    pages[[page]] <- as_tibble(result)
+    if (nrow(result) < 1000) break
+    page <- page + 1
+  }
+  bind_rows(pages) |> mutate(token = token)
+}
+
+transfers <- map2_dfr(stablecoins$contract, stablecoins$token, get_transfers) |>
+  left_join(stablecoins, join_by(token)) |>
+  transmute(
+    token,
+    block = as.numeric(blockNumber),
+    hash,
+    amount = as.numeric(value) / 10^decimals
+  )
+```
+
+We will investigate two questions:
+
+#1. How do their transfer sizes differ?
+
+```{r}
+transfers |>
+  group_by(token) |>
+  summarise(
+    n_transfers = n(),
+    first_block = min(block),
+    last_block = max(block),
+    mean = mean(amount),
+    median = median(amount),
+    max = max(amount)
+  )
+
+transfers |>
+  filter(amount > 0) |>
+  ggplot(aes(x = token, y = amount)) +
+  geom_boxplot(fill = "steelblue") +
+  scale_y_log10(labels = function(x) format(x, scientific = FALSE, trim = TRUE)) +
+  labs(title = "Transfer sizes by stablecoin", x = NULL, y = "Amount (USD, log scale)") +
+  theme_minimal()
+```
+I trasferimenti mostrano una forte asimmetria con una coda lunga, dove la grande maggioranza delle transazioni ha importi ridotti ma pochissimi trasferimenti enormi
+
+
+#2. How much transfer volume does each stablecoin generate?
+```{r}
+volume <- transfers |>
+  group_by(token) |>
+  summarise(n_transfers = n(), total_volume = sum(amount))
+
+volume
+
+ggplot(volume, aes(x = token, y = total_volume)) +
+  geom_col(fill = "steelblue") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE, trim = TRUE)) +
+  labs(title = "Transfer volume in the same block window", x = NULL, y = "Volume (USD)") +
+  theme_minimal()
+```
+Il volume totale generato da USDC (~$669 milioni), seguito da USDT (~$38 milioni) e da DAI (~$1,2 milioni).
