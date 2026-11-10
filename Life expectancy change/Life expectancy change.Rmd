@@ -1,0 +1,78 @@
+---
+title: "How life expectancy change over time for each continent?"
+output:
+  html_document:
+    theme: spacelab
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+# cache results
+knitr::opts_chunk$set(cache=TRUE, message=FALSE)
+```
+
+```{r, message = FALSE, warning=FALSE}
+library(tidyverse)
+library(modelr)
+library(gapminder)
+library(broom)
+```
+
+```{r}
+gapminder
+```
+
+Life expectancy for a country is the mean length of life over people of a country. Using variables life expectancy and population of a country:
+
+#1.  derive a formula to compute life expectancy of a continent (a group of countries)
+
+Un continente ha $k$ paesi, $i = 1,\dots,k$. Il paese $i$ ha $N_i$ abitanti (pop) e la persona $j$ ha durata di vita $L_{ij}$. L’aspettativa di vita del paese $i$, $e_i$ (lifeExp), è la media della durata di vita sugli abitanti:
+
+$$e_i = \frac{1}{N_i}\sum_{j=1}^{N_i} L_{ij} \quad\Longrightarrow\quad \sum_{j=1}^{N_i} L_{ij} = N_i\, e_i$$
+
+Il continente è un gruppo più grande di persone, quindi la sua aspettativa di vita è la media di $L_{ij}$ su tutti i suoi abitanti:
+
+$$E = \frac{\sum_{i=1}^{k}\sum_{j=1}^{N_i} L_{ij}}{\sum_{i=1}^{k} N_i}$$
+
+Sostituendo $\sum_j L_{ij} = N_i e_i$ al numeratore si ottiene:
+
+$$\boxed{E = \frac{\sum_{i=1}^{k} N_i\, e_i}{\sum_{i=1}^{k} N_i} = \sum_{i=1}^{k} w_i\, e_i, \qquad w_i = \frac{N_i}{\sum_m N_m}}$$
+
+È la media ponderata per la popolazione delle aspettative di vita dei paesi, cioè weighted.mean(lifeExp, w = pop) in R. Non è la media semplice $\frac{1}{k}\sum_i e_i$, che darebbe all’Islanda lo stesso peso della Cina. Le due coincidono solo se tutti i paesi hanno la stessa popolazione.
+
+#2.  plot how life expectancy changed over time for each continent
+```{r}
+continent_life <- gapminder %>% 
+  group_by(continent, year) %>% 
+  summarise(lifeExp = weighted.mean(lifeExp, w = pop), .groups = "drop")
+
+# All continents in one plot
+ggplot(continent_life, aes(year, lifeExp, colour = continent)) +
+  geom_line(linewidth = 1) +
+  geom_point() +
+  labs(
+    x = "Year",
+    y = "Life expectancy (years, population-weighted)",
+    colour = "Continent",
+    title = "Life expectancy by continent, 1952-2007"
+  ) +
+  theme_classic()
+```
+
+#3.  do the same for the whole planet
+```{r}
+world_life <- gapminder %>% 
+  group_by(year) %>% 
+  summarise(lifeExp = weighted.mean(lifeExp, pop), .groups = "drop") %>% 
+  mutate(continent = "Pianeta")
+
+ggplot() +
+  geom_line(data = continent_life,
+            aes(year, lifeExp, colour = continent), linewidth = 0.8) +
+  geom_line(data = world_life,
+            aes(year, lifeExp, colour = continent),
+            linewidth = 1.5, linetype = "dashed") +
+  labs(x = "Anno", y = "Aspettativa di vita", colour = "Legenda",
+       title = "Pianeta (tratteggiato) e continenti") +
+  theme_classic()
+```
